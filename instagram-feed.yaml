@@ -1,0 +1,23 @@
+enabled: true
+
+# Webhook base route. Trigger a fetch with:
+#   GET  /_instagram/fetch?key=<webhook_key>
+#   (or send the key as an X-Webhook-Key header)
+route: /_instagram
+
+# Secret required to trigger the webhook. Generate one and paste it here (leave
+# blank to disable the webhook entirely — the scheduler/CLI still work):
+#   php -r 'echo bin2hex(random_bytes(24));'
+webhook_key: ''
+
+# Cached still-image width in px (aspect ratio preserved, never upscaled).
+# The home grid shows posts at ~220-320px, so 250 keeps files tiny.
+image_width: 250
+webp_quality: 80
+
+# How many latest posts to cache (enough history for both toggle modes).
+max_items: 120
+
+# Scheduler cadence (Grav registers both jobs itself).
+fetch_at: '*/30 * * * *'    # cache feed + resize images
+refresh_at: '17 4 * * *'    # refresh the long-lived token (daily)

@@ -1,0 +1,79 @@
+name: Instagram Feed
+slug: instagram-feed
+type: plugin
+version: 1.0.0
+description: "Caches the Instagram feed and self-hosts resized post images (PHP-GD → WebP). Secret-key webhook + scheduler job. Built for the Alliance Française de Sendai theme."
+icon: instagram
+author:
+  name: Alliance Française de Sendai
+  url: https://afsendai.com
+homepage: https://github.com/Eymeric65/grav-plugin-instagram-feed
+keywords: instagram, feed, webhook, images, webp, cache
+bugs: https://github.com/Eymeric65/grav-plugin-instagram-feed/issues
+readme: https://github.com/Eymeric65/grav-plugin-instagram-feed/blob/main/README.md
+license: MIT
+
+dependencies:
+  - { name: grav, version: '>=1.7.0' }
+
+form:
+  validation: loose
+  fields:
+    enabled:
+      type: toggle
+      label: Plugin status
+      highlight: 1
+      default: 1
+      options:
+        1: PLUGIN_ADMIN.ENABLED
+        0: PLUGIN_ADMIN.DISABLED
+      validate:
+        type: bool
+
+    route:
+      type: text
+      label: Webhook route
+      help: "Path that triggers a fetch, e.g. /_instagram → GET /_instagram/fetch?key=…"
+      default: /_instagram
+
+    webhook_key:
+      type: text
+      label: Webhook key
+      help: "Secret required to trigger the webhook. Keep it private."
+
+    image_width:
+      type: number
+      label: Cached image width (px)
+      help: "Post stills are resized to this width (aspect kept, never upscaled)."
+      default: 250
+      validate:
+        min: 64
+        max: 1080
+
+    webp_quality:
+      type: number
+      label: WebP quality
+      default: 80
+      validate:
+        min: 1
+        max: 100
+
+    max_items:
+      type: number
+      label: Posts to cache
+      default: 120
+      validate:
+        min: 1
+        max: 500
+
+    fetch_at:
+      type: text
+      label: Fetch cadence (cron)
+      help: "How often to cache the feed + resize images."
+      default: '*/30 * * * *'
+
+    refresh_at:
+      type: text
+      label: Token refresh cadence (cron)
+      help: "How often to refresh the long-lived Instagram token."
+      default: '17 4 * * *'
