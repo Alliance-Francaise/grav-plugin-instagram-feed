@@ -2,9 +2,12 @@
 
 namespace Grav\Plugin;
 
+use Grav\Common\Grav;
 use Grav\Common\Plugin;
 use Grav\Plugin\InstagramFeed\InstagramFeed;
 use RocketTheme\Toolbox\Event\Event;
+use RuntimeException;
+use Throwable;
 
 require_once __DIR__ . '/classes/InstagramFeed.php';
 
@@ -67,9 +70,13 @@ class InstagramFeedPlugin extends Plugin
     }
 
     /**
-     * Register the periodic fetch as a native Grav scheduler job. It shells out to
-     * the plugin's own CLI command (a plain string command, so it renders in
-     * `bin/grav scheduler -j` and the Admin scheduler, unlike a raw closure).
+     * Register both actions as native Grav scheduler jobs. They run in-process via
+     * string static callables — the same shape core uses for `Cache::purgeJob` and
+     * `Backups::backup`, so they still render in `bin/grav scheduler -j` and the
+     * Admin scheduler. Deliberately NOT `addCommand('php', ['bin/plugin', ...])`:
+     * that spawns a child PHP resolved from the cron PATH, which on hosts with
+     * several PHP versions installed is not necessarily the one Grav requires
+     * (vendor/composer/platform_check.php then aborts every single run).
      */
     public function onSchedulerInitialized(Event $event): void
     {
@@ -77,13 +84,54 @@ class InstagramFeedPlugin extends Plugin
         $fetchAt   = (string) ($this->config->get('plugins.instagram-feed.fetch_at') ?: '*/30 * * * *');
         $refreshAt = (string) ($this->config->get('plugins.instagram-feed.refresh_at') ?: '17 4 * * *');
 
-        $fetch = $scheduler->addCommand('php', ['bin/plugin', 'instagram-feed', 'fetch'], 'instagram-fetch-feed');
+        $fetch = $scheduler->addFunction(self::class . '::schedulerFetch', [], 'instagram-fetch-feed');
         $fetch->at($fetchAt);
         $fetch->output('logs/instagram-scheduler.out');
 
-        $refresh = $scheduler->addCommand('php', ['bin/plugin', 'instagram-feed', 'refresh-token'], 'instagram-refresh-token');
+        $refresh = $scheduler->addFunction(self::class . '::schedulerRefreshToken', [], 'instagram-refresh-token');
         $refresh->at($refreshAt);
         $refresh->output('logs/instagram-scheduler.out');
+    }
+
+    /**
+     * Scheduler entry point for the periodic feed + image cache.
+     */
+    public static function schedulerFetch(): string
+    {
+        return self::runScheduled('fetch');
+    }
+
+    /**
+     * Scheduler entry point for the daily long-lived token refresh.
+     */
+    public static function schedulerRefreshToken(): string
+    {
+        return self::runScheduled('refresh-token');
+    }
+
+    /**
+     * Run an action inside the scheduler process and report it the way Job::exec()
+     * expects: the returned string becomes the job output, and a RuntimeException
+     * (the only exception it rescues) marks the job failed. Anything else escaping
+     * from here would abort the whole scheduler run, so everything is contained.
+     */
+    private static function runScheduled(string $action): string
+    {
+        $grav = Grav::instance();
+
+        try {
+            $feed = new InstagramFeed($grav, (array) $grav['config']->get('plugins.instagram-feed'));
+            $result = $action === 'refresh-token' ? $feed->refreshToken() : $feed->run();
+        } catch (Throwable $e) {
+            throw new RuntimeException($action . ' failed: ' . $e->getMessage(), 0, $e);
+        }
+
+        $json = (string) json_encode($result, JSON_UNESCAPED_SLASHES);
+        if (empty($result['ok'])) {
+            throw new RuntimeException($json);
+        }
+
+        return $json;
     }
 
     /**
