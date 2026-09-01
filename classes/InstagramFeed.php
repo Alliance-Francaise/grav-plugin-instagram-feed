@@ -14,6 +14,14 @@ use Grav\Common\Grav;
  */
 class InstagramFeed
 {
+    /**
+     * Pin the Graph API version. Called without one, graph.instagram.com serves
+     * the oldest version still alive, so an unversioned integration breaks by
+     * itself the day Meta retires that one. Paging URLs come back from the API
+     * already carrying this version, so the paging loop needs no special care.
+     */
+    private const GRAPH_VERSION = 'v26.0';
+
     private const GRAPH_FIELDS = 'id,caption,media_type,media_product_type,media_url,permalink,thumbnail_url,timestamp';
 
     /** @var Grav */
@@ -50,12 +58,9 @@ class InstagramFeed
             return $this->fail('Instagram feed: cannot create cache dir');
         }
 
-        if (!is_file($tokenFile)) {
-            return $this->fail('Instagram feed: no token.json — seed it first (see bin/README-instagram.md)');
-        }
-        $token = (string) (json_decode((string) file_get_contents($tokenFile), true)['access_token'] ?? '');
-        if ($token === '') {
-            return $this->fail('Instagram feed: no usable token in token.json');
+        [$token, $tokenError] = $this->readToken($tokenFile, 'Instagram feed');
+        if ($tokenError !== null) {
+            return $this->fail($tokenError);
         }
 
         // Page through /me/media, accumulating into $all until we hit maxItems.
@@ -63,7 +68,7 @@ class InstagramFeed
         $next = null;
         $pages = 0;
         while (true) {
-            $url = $next ?: 'https://graph.instagram.com/me/media?' . http_build_query([
+            $url = $next ?: 'https://graph.instagram.com/' . self::GRAPH_VERSION . '/me/media?' . http_build_query([
                 'fields'       => self::GRAPH_FIELDS,
                 'limit'        => $pageLimit,
                 'access_token' => $token,
@@ -184,15 +189,12 @@ class InstagramFeed
         $base = (string) $this->grav['locator']->findResource('user-data://', true, true);
         $tokenFile = $base . '/instagram/token.json';
 
-        if (!is_file($tokenFile)) {
-            return $this->fail('Instagram token: no token.json — seed it first (see the plugin README)');
-        }
-        $current = (string) (json_decode((string) file_get_contents($tokenFile), true)['access_token'] ?? '');
-        if ($current === '') {
-            return $this->fail('Instagram token: token.json has no access_token');
+        [$current, $tokenError] = $this->readToken($tokenFile, 'Instagram token');
+        if ($tokenError !== null) {
+            return $this->fail($tokenError);
         }
 
-        $url = 'https://graph.instagram.com/refresh_access_token?' . http_build_query([
+        $url = 'https://graph.instagram.com/' . self::GRAPH_VERSION . '/refresh_access_token?' . http_build_query([
             'grant_type'   => 'ig_refresh_token',
             'access_token' => $current,
         ]);
@@ -227,6 +229,45 @@ class InstagramFeed
         $this->log('info', sprintf('Instagram token: refreshed — valid ~%d days (until %s)', $days, date('Y-m-d', $expiresAt)));
 
         return ['ok' => true, 'expires_in' => $expiresIn, 'expires_at' => $expiresAt, 'valid_days' => $days];
+    }
+
+    /**
+     * Read the stored access token, and check it is the right *kind* of token.
+     *
+     * graph.instagram.com only accepts Instagram-Login tokens (`IGAA…`). Hand it
+     * a Facebook Login token (`EAA…`) — the kind the Graph API Explorer gives you
+     * by default, and an easy mistake to make since both come from the same Meta
+     * app — and the only thing it says back is "Invalid OAuth access token -
+     * Cannot parse access token", which names neither the cause nor the fix.
+     * Catch the mismatch here, where we can say what is actually wrong.
+     *
+     * @param string $tokenFile path to token.json
+     * @param string $prefix    log-message prefix, e.g. 'Instagram feed'
+     * @return array{0:string,1:string|null} [token, error] — error is null on success
+     */
+    private function readToken(string $tokenFile, string $prefix): array
+    {
+        if (!is_file($tokenFile)) {
+            return ['', $prefix . ': no token.json — seed it first (see the plugin README)'];
+        }
+
+        $token = (string) (json_decode((string) file_get_contents($tokenFile), true)['access_token'] ?? '');
+        if ($token === '') {
+            return ['', $prefix . ': no usable token in token.json'];
+        }
+
+        if (strncmp($token, 'IG', 2) !== 0) {
+            $family = strncmp($token, 'EAA', 3) === 0
+                ? 'a Facebook Login token (EAA…)'
+                : 'an unrecognised token';
+
+            return ['', $prefix . ': token.json holds ' . $family . ', but graph.instagram.com needs'
+                . ' an Instagram Login token (IGAA…) issued with the instagram_business_basic scope.'
+                . ' Regenerate it under Meta app → Instagram → API setup with Instagram login,'
+                . ' not from the Graph API Explorer. See the plugin README.'];
+        }
+
+        return [$token, null];
     }
 
     /**

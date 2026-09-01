@@ -65,14 +65,54 @@ Then clear the cache: `bin/grav clearcache`.
 
 ### 1. Seed your token (once)
 
-The plugin *refreshes* a token but can't create the first one. Get a long-lived
-token, then on the server:
+The plugin *refreshes* a token but can't create the first one.
+
+> **It must be an Instagram Login token — one that starts with `IGAA…`.**
+>
+> This plugin talks to `graph.instagram.com` (the *Instagram API with Instagram
+> Login*), which accepts **only** that token family. A Facebook Login token
+> (`EAA…`) is the easy mistake: the Graph API Explorer hands you one by default,
+> it comes from the same Meta app, and it looks equally valid — but
+> `graph.instagram.com` answers every call with `Invalid OAuth access token -
+> Cannot parse access token`, which tells you nothing. The plugin now checks the
+> prefix on load and says so plainly instead.
+
+To get the right one:
+
+1. The Instagram account must be **Business** or **Creator**. Personal accounts
+   lost API access when the Basic Display API shut down on 2024-12-04.
+2. In your Meta app, add the **Instagram** product and set up **Instagram
+   business login** (*not* Facebook Login).
+3. Grant the **`instagram_business_basic`** scope — that, not
+   `instagram_manage_comments`, is what `/me/media` needs.
+4. **Meta app → Instagram → API setup with Instagram login → Generate token**
+   gives you a long-lived (60-day) token directly. Otherwise exchange a
+   short-lived one:
+
+   ```bash
+   curl -s -G 'https://graph.instagram.com/access_token' \
+     --data-urlencode 'grant_type=ig_exchange_token' \
+     --data-urlencode 'client_secret=YOUR_IG_APP_SECRET' \
+     --data-urlencode 'access_token=YOUR_SHORT_LIVED_TOKEN'
+   ```
+
+Then, on the server:
 
 ```bash
 mkdir -p user/data/instagram
-echo '{"access_token":"YOUR_LONG_LIVED_TOKEN"}' > user/data/instagram/token.json
+echo '{"access_token":"IGAA_YOUR_LONG_LIVED_TOKEN"}' > user/data/instagram/token.json
 chmod 600 user/data/instagram/token.json
 ```
+
+Check it before walking away — this prints the diagnosis if the token is the
+wrong family, and caches the feed if it isn't:
+
+```bash
+bin/plugin instagram-feed fetch
+```
+
+From here the `refresh-token` action keeps it alive indefinitely; a token is only
+dead for good if nothing refreshes it for 60 days.
 
 ### 2. Configure
 

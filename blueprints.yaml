@@ -1,7 +1,7 @@
 name: Instagram Feed
 slug: instagram-feed
 type: plugin
-version: 1.0.0
+version: 1.0.1
 description: "Caches the Instagram feed and self-hosts resized post images (PHP-GD → WebP). Secret-key webhook + scheduler job. Built for the Alliance Française de Sendai theme."
 icon: instagram
 author:
