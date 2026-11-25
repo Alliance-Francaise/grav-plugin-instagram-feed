@@ -56,7 +56,7 @@ match the slug):
 
 ```bash
 cd /path/to/grav/user/plugins
-git clone https://github.com/Eymeric65/grav-plugin-instagram-feed.git instagram-feed
+git clone https://github.com/Alliance-Francaise/grav-plugin-instagram-feed.git instagram-feed
 ```
 
 Then clear the cache: `bin/grav clearcache`.
